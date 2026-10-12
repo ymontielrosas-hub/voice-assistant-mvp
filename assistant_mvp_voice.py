@@ -143,7 +143,7 @@ def speak_text_elevenlabs(text: str):
     if not eleven_key:
         raise RuntimeError("Falta ELEVENLABS_API_KEY en .env")
 
-    voice_id = os.getenv("ELEVEN_VOICE_ID", "Nh2zY9kknu6z4pZy6FhD")
+    voice_id = os.getenv("ELEVEN_VOICE_ID", "qO80WzLXn31Ps3Xf2V7d")
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 
     headers = {
@@ -155,6 +155,12 @@ def speak_text_elevenlabs(text: str):
     payload = {
         "text": text,
         "model_id": "eleven_v4",
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.8,
+            "style": 0.3,
+            "use_speaker_boost": True,
+        },
     }
 
     response = requests.post(url, json=payload, headers=headers, timeout=30)
