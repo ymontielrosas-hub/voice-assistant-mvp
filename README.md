@@ -2,7 +2,7 @@
 
 Proyecto mínimo en Python para crear un asistente con voz que:
 1. escucha desde el micrófono,
-2. transcribe con Whisper,
+2. transcribe (Deepgram o Whisper),
 3. responde con GPT,
 4. reproduce la respuesta con voz local, gTTS o ElevenLabs.
 
@@ -11,6 +11,7 @@ Proyecto mínimo en Python para crear un asistente con voz que:
 - Micrófono y altavoz
 - API key de OpenAI
 - (Opcional) API key de ElevenLabs para voz más natural
+- (Opcional) API key de Deepgram para transcripción
 - ffmpeg para convertir archivos de audio (si usas MP3 u otros formatos)
 
 ## Instalación
@@ -26,6 +27,7 @@ Edita `.env` y agrega tus claves:
 
 ```env
 OPENAI_API_KEY=tu_api_key_aqui
+DEEPGRAM_API_KEY=tu_api_key_de_deepgram
 ELEVENLABS_API_KEY=tu_key_de_elevenlabs
 ELEVEN_VOICE_ID=qO80WzLXn31Ps3Xf2V7d
 TTS_PROVIDER=elevenlabs
@@ -42,7 +44,7 @@ Opciones válidas para `TTS_PROVIDER`:
 python assistant_mvp_voice.py
 ```
 
-Luego pulsa Enter para grabar voz. El asistente transcribirá lo que digas y te responderá con voz.
+Luego pulsa Enter para grabar voz. El asistente transcribirá lo que digas (Deepgram si está configurado, o Whisper) y te responderá con voz.
 
 ## Ejecutar con un archivo de audio
 
@@ -59,13 +61,12 @@ ffmpeg -i mi_voz.mp3 -ar 16000 -ac 1 mi_voz.wav
 python assistant_mvp_voice.py mi_voz.wav
 ```
 
-## Voz
-- `TTS_PROVIDER=elevenlabs` usa ElevenLabs y la voz de `ELEVEN_VOICE_ID`.
-- `TTS_PROVIDER=pyttsx3` usa la voz local del sistema.
-- `TTS_PROVIDER=gtts` usa Google Text-to-Speech y genera audio con gTTS.
+## Deepgram
+- Si pones `DEEPGRAM_API_KEY` en `.env`, el asistente usará Deepgram para transcribir en lugar de Whisper.
+- Deepgram soporta puntuación automática y detección de idioma (se fuerza `es` en el script).
 
 ## Notas
-- Este MVP usa Whisper + ChatGPT + voz local, gTTS o ElevenLabs.
+- Este MVP usa Deepgram/Whisper + ChatGPT + voz local, gTTS o ElevenLabs.
 - `pyttsx3` usa voz local del sistema y puede variar según el sistema operativo.
-- El uso de OpenAI y ElevenLabs tiene costo según tu plan.
+- El uso de OpenAI, Deepgram y ElevenLabs tiene costo según tu plan.
 - Si tu micrófono o parlantes no funcionan, revisa la configuración del sistema.

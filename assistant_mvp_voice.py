@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MVP: escucha -> Whisper (OpenAI) -> GPT -> voz (ElevenLabs o pyttsx3)
+MVP: escucha -> (Deepgram | Whisper) -> GPT -> voz (ElevenLabs, gTTS o pyttsx3)
 
 Modo de uso:
 - sin argumentos: graba desde el micrófono
@@ -11,6 +11,7 @@ import sys
 import subprocess
 import tempfile
 import time
+import asyncio
 
 import sounddevice as sd
 import soundfile as sf
@@ -18,12 +19,23 @@ import pyttsx3
 import requests
 from dotenv import load_dotenv
 import openai
+from gtts import gTTS
+from pydub import AudioSegment
+
+# Deepgram SDK (optional)
+try:
+    from deepgram import Deepgram
+except Exception:
+    Deepgram = None
 
 load_dotenv()
 
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 if OPENAI_KEY:
     openai.api_key = OPENAI_KEY
+
+DEEPGRAM_KEY = os.getenv("DEEPGRAM_API_KEY")
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "elevenlabs").lower()
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
@@ -44,7 +56,7 @@ def record_to_wav(filename: str, duration: int):
 
 
 def convert_to_wav(input_path: str, output_path: str):
-    """Convierte el audio a WAV mono 16kHz para Whisper.
+    """Convierte el audio a WAV mono 16kHz para transcripción.
     Requiere ffmpeg instalado en el sistema.
     """
     try:
@@ -66,8 +78,7 @@ def convert_to_wav(input_path: str, output_path: str):
         )
     except FileNotFoundError:
         raise RuntimeError(
-            "ffmpeg no está instalado. Instálalo y reintenta: "
-            "https://www.ffmpeg.org/download.html"
+            "ffmpeg no está instalado. Instálalo y reintenta: https://www.ffmpeg.org/download.html"
         )
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(f"No se pudo convertir el archivo de audio: {exc}")
@@ -85,6 +96,39 @@ def prepare_audio_for_whisper(audio_path: str) -> str:
     return tmp_path
 
 
+# --- Transcripción: Deepgram (si está configurado) ---
+async def _dg_transcribe_async(path: str, options: dict):
+    if not Deepgram:
+        raise RuntimeError("deepgram-sdk no está instalado. Añade 'deepgram-sdk' a requirements.txt y pip install -r requirements.txt")
+    dg = Deepgram(DEEPGRAM_KEY)
+    with open(path, "rb") as audio:
+        audio_bytes = audio.read()
+        source = {"buffer": audio_bytes, "mimetype": "audio/wav"}
+        result = await dg.transcription.prerecorded(source, options)
+    try:
+        transcript = result["results"]["channels"][0]["alternatives"][0]["transcript"]
+    except Exception:
+        transcript = str(result)
+    return transcript
+
+
+def transcribe_with_deepgram(path: str) -> str:
+    if not DEEPGRAM_KEY:
+        raise RuntimeError("Falta DEEPGRAM_API_KEY en .env")
+    print("Subiendo a Deepgram para transcripción...")
+    options = {
+        "punctuate": True,
+        "language": "es",
+    }
+    try:
+        text = asyncio.run(_dg_transcribe_async(path, options))
+    except Exception as e:
+        raise RuntimeError(f"Error al transcribir con Deepgram: {e}")
+    print(f"Transcripción (Deepgram): {text}")
+    return text
+
+
+# --- Transcripción: Whisper (OpenAI) ---
 def transcribe_with_whisper(path: str) -> str:
     if not OPENAI_KEY:
         raise RuntimeError("Falta OPENAI_API_KEY en .env")
@@ -96,10 +140,11 @@ def transcribe_with_whisper(path: str) -> str:
             text = transcript["text"]
         except Exception as e:
             raise RuntimeError(f"Error al transcribir: {e}")
-    print(f"Transcripción: {text}")
+    print(f"Transcripción (Whisper): {text}")
     return text
 
 
+# --- GPT ---
 def ask_gpt(prompt: str) -> str:
     if not OPENAI_KEY:
         raise RuntimeError("Falta OPENAI_API_KEY en .env")
@@ -122,6 +167,7 @@ def ask_gpt(prompt: str) -> str:
     return text
 
 
+# --- TTS providers ---
 def speak_text_local(text: str):
     engine = pyttsx3.init()
     voices = engine.getProperty("voices")
@@ -136,6 +182,27 @@ def speak_text_local(text: str):
     engine.setProperty("rate", 150)
     engine.say(text)
     engine.runAndWait()
+
+
+def speak_text_gtts(text: str):
+    print("Usando gTTS...")
+    mp3_path = "reply.mp3"
+    wav_path = "reply.wav"
+
+    tts = gTTS(text=text, lang="es", slow=False)
+    tts.save(mp3_path)
+    AudioSegment.from_mp3(mp3_path).export(wav_path, format="wav")
+
+    data, samplerate = sf.read(wav_path, dtype="float32")
+    if data.ndim > 1:
+        data = data.mean(axis=1)
+    sd.play(data, samplerate)
+    sd.wait()
+
+    if os.path.exists(mp3_path):
+        os.remove(mp3_path)
+    if os.path.exists(wav_path):
+        os.remove(wav_path)
 
 
 def speak_text_elevenlabs(text: str):
@@ -179,8 +246,18 @@ def speak_text_elevenlabs(text: str):
 
 
 def speak_text(text: str):
+    provider = TTS_PROVIDER
+    if provider == "pyttsx3":
+        speak_text_local(text)
+        return
+
+    if provider == "gtts":
+        speak_text_gtts(text)
+        return
+
+    # provider es elevenlabs por defecto
     try:
-        if os.getenv("ELEVENLABS_API_KEY"):
+        if os.getenv("ELEVENLABS_API_KEY") and provider == "elevenlabs":
             speak_text_elevenlabs(text)
             return
     except Exception as e:
@@ -189,6 +266,7 @@ def speak_text(text: str):
     speak_text_local(text)
 
 
+# --- Main flow ---
 def main():
     if len(sys.argv) > 1:
         audio_path = sys.argv[1]
@@ -198,7 +276,12 @@ def main():
         print(f"Usando archivo de audio: {audio_path}")
         prepared_path = prepare_audio_for_whisper(audio_path)
         try:
-            text = transcribe_with_whisper(prepared_path)
+            # Prioridad: Deepgram -> Whisper
+            if DEEPGRAM_KEY:
+                text = transcribe_with_deepgram(prepared_path)
+            else:
+                text = transcribe_with_whisper(prepared_path)
+
             if not text.strip():
                 print("No se detectó voz en el archivo.")
                 return
@@ -226,7 +309,13 @@ def main():
                     duration = DEFAULT_DURATION
 
             record_to_wav(filename, duration)
-            text = transcribe_with_whisper(filename)
+
+            # Prioridad: Deepgram -> Whisper
+            if DEEPGRAM_KEY:
+                text = transcribe_with_deepgram(filename)
+            else:
+                text = transcribe_with_whisper(filename)
+
             if not text.strip():
                 print("No se detectó voz. Intenta de nuevo.")
                 continue
