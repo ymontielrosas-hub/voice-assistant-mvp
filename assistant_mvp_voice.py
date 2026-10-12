@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """
 MVP: escucha -> Whisper (OpenAI) -> GPT -> voz (ElevenLabs o pyttsx3)
-Pulsa Enter para grabar (duración configurable).
+
+Modo de uso:
+- sin argumentos: graba desde el micrófono
+- con un archivo: python assistant_mvp_voice.py mi_voz.wav
 """
 import os
+import sys
+import subprocess
+import tempfile
 import time
 
 import sounddevice as sd
@@ -35,6 +41,48 @@ def record_to_wav(filename: str, duration: int):
     sd.wait()
     sf.write(filename, recording, SAMPLE_RATE, subtype="PCM_16")
     print(f"Guardado en {filename}")
+
+
+def convert_to_wav(input_path: str, output_path: str):
+    """Convierte el audio a WAV mono 16kHz para Whisper.
+    Requiere ffmpeg instalado en el sistema.
+    """
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                input_path,
+                "-ar",
+                str(SAMPLE_RATE),
+                "-ac",
+                str(CHANNELS),
+                output_path,
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        raise RuntimeError(
+            "ffmpeg no está instalado. Instálalo y reintenta: "
+            "https://www.ffmpeg.org/download.html"
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"No se pudo convertir el archivo de audio: {exc}")
+
+
+def prepare_audio_for_whisper(audio_path: str) -> str:
+    ext = os.path.splitext(audio_path.lower())[1]
+    if ext == ".wav":
+        return audio_path
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    convert_to_wav(audio_path, tmp_path)
+    return tmp_path
 
 
 def transcribe_with_whisper(path: str) -> str:
@@ -130,12 +178,31 @@ def speak_text(text: str):
             speak_text_elevenlabs(text)
             return
     except Exception as e:
-        print(f"ElevenLabs falló: {e}.Usando voz local.")
+        print(f"ElevenLabs falló: {e}. Usando voz local.")
 
     speak_text_local(text)
 
 
 def main():
+    if len(sys.argv) > 1:
+        audio_path = sys.argv[1]
+        if not os.path.exists(audio_path):
+            raise FileNotFoundError(f"No existe el archivo: {audio_path}")
+
+        print(f"Usando archivo de audio: {audio_path}")
+        prepared_path = prepare_audio_for_whisper(audio_path)
+        try:
+            text = transcribe_with_whisper(prepared_path)
+            if not text.strip():
+                print("No se detectó voz en el archivo.")
+                return
+            reply = ask_gpt(text)
+            speak_text(reply)
+        finally:
+            if prepared_path != audio_path and os.path.exists(prepared_path):
+                os.unlink(prepared_path)
+        return
+
     print("MVP asistente de voz — pulsa Enter para grabar (ctrl+c para salir).")
     filename = "input.wav"
     while True:
