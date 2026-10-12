@@ -4,14 +4,14 @@ Proyecto mínimo en Python para crear un asistente con voz que:
 1. escucha desde el micrófono,
 2. transcribe con Whisper,
 3. responde con GPT,
-4. reproduce la respuesta con voz local o con ElevenLabs.
+4. reproduce la respuesta con voz local, gTTS o ElevenLabs.
 
 ## Requisitos
 - Python 3.8+
 - Micrófono y altavoz
 - API key de OpenAI
 - (Opcional) API key de ElevenLabs para voz más natural
-- ffmpeg para convertir archivos de audio (opcional, si usas MP3 u otros formatos)
+- ffmpeg para convertir archivos de audio (si usas MP3 u otros formatos)
 
 ## Instalación
 
@@ -28,7 +28,13 @@ Edita `.env` y agrega tus claves:
 OPENAI_API_KEY=tu_api_key_aqui
 ELEVENLABS_API_KEY=tu_key_de_elevenlabs
 ELEVEN_VOICE_ID=qO80WzLXn31Ps3Xf2V7d
+TTS_PROVIDER=elevenlabs
 ```
+
+Opciones válidas para `TTS_PROVIDER`:
+- `elevenlabs`
+- `pyttsx3`
+- `gtts`
 
 ## Ejecutar con micrófono
 
@@ -54,11 +60,12 @@ python assistant_mvp_voice.py mi_voz.wav
 ```
 
 ## Voz
-- Si `ELEVENLABS_API_KEY` está presente, el proyecto usará ElevenLabs para generar audio.
-- Si no está presente, usará `pyttsx3` como fallback local.
+- `TTS_PROVIDER=elevenlabs` usa ElevenLabs y la voz de `ELEVEN_VOICE_ID`.
+- `TTS_PROVIDER=pyttsx3` usa la voz local del sistema.
+- `TTS_PROVIDER=gtts` usa Google Text-to-Speech y genera audio con gTTS.
 
 ## Notas
-- Este MVP usa Whisper + ChatGPT + voz local o ElevenLabs.
+- Este MVP usa Whisper + ChatGPT + voz local, gTTS o ElevenLabs.
 - `pyttsx3` usa voz local del sistema y puede variar según el sistema operativo.
 - El uso de OpenAI y ElevenLabs tiene costo según tu plan.
 - Si tu micrófono o parlantes no funcionan, revisa la configuración del sistema.
