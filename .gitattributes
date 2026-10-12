@@ -1,0 +1,3 @@
+# .gitattributes
+# Keep line endings stable for shell scripts if needed.
+* text=auto
